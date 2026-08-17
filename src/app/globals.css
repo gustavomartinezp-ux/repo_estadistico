@@ -1,0 +1,105 @@
+@import "tailwindcss";
+
+:root {
+  --background: #ffffff;
+  --foreground: #171717;
+}
+
+/*
+ * Rampa "primary" generada por .claude/skills/ui-design-system a partir del
+ * color de marca (#4f46e5, índigo vívido — refresh 2026-08). Regenerar con:
+ *   python .claude/skills/ui-design-system/scripts/design_token_generator.py <hex> modern css
+ * y pegar los pasos "colors-primary-*" de design-tokens/tokens.css aquí.
+ *
+ * "accent" es la segunda parada de los degradés (barras del gráfico, glow de
+ * las KPI cards, línea del Topbar): cian vívido, elegido por contraste de
+ * matiz con el índigo primario en vez de ser un tono más del mismo azul.
+ */
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+
+  --color-primary-50: #f6f5fd;
+  --color-primary-100: #e9e8fb;
+  --color-primary-200: #cdcbf7;
+  --color-primary-300: #aea9f3;
+  --color-primary-400: #8781ed;
+  --color-primary-500: #675fe8;
+  --color-primary-600: #4f46e5;
+  --color-primary-700: #433bc2;
+  --color-primary-800: #352f9b;
+  --color-primary-900: #292477;
+
+  --color-accent-50: #ecfeff;
+  --color-accent-100: #cffafe;
+  --color-accent-200: #a5f3fc;
+  --color-accent-300: #67e8f9;
+  --color-accent-400: #22d3ee;
+  --color-accent-500: #06b6d4;
+  --color-accent-600: #0891b2;
+  --color-accent-700: #0e7490;
+  --color-accent-800: #155e75;
+  --color-accent-900: #164e63;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --background: #0a0a0a;
+    --foreground: #ededed;
+  }
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: Arial, Helvetica, sans-serif;
+}
+
+/*
+ * El ícono nativo de <input type="date"> no queda anclado de forma
+ * consistente entre un campo vacío ("dd-mm-aaaa") y uno con valor
+ * ("15-03-2026") -- varía por navegador/contenido. En vez de pelear con eso,
+ * lo hacemos invisible pero clicable en todo el ancho del input, y cada
+ * selector dibuja su propio ícono de Lucide encima, fijo en el borde
+ * derecho, siempre en la misma posición sin importar el contenido.
+ */
+input[type="date"].date-input--icon-hidden::-webkit-calendar-picker-indicator {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+/*
+ * Fondo ambiente del dashboard: dos manchas de degradé muy suaves (índigo
+ * arriba-izq, cian arriba-der) en vez del slate-50 plano — le da profundidad
+ * a la página sin competir con los datos. `fixed` + z-index negativo para no
+ * afectar el flujo ni el scroll.
+ */
+.das-ambient-bg {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(60% 40% at 12% 0%, color-mix(in srgb, var(--color-primary-200) 45%, transparent) 0%, transparent 70%),
+    radial-gradient(50% 35% at 100% 8%, color-mix(in srgb, var(--color-accent-200) 40%, transparent) 0%, transparent 70%);
+}
+
+/* ui-ux-pro-max checklist: reduced-motion debe respetarse globalmente. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
