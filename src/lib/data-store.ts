@@ -35,7 +35,14 @@ function toStatRecords(raw: AggregatedRecord[]): StatRecord[] {
 async function readRawFromBlob(): Promise<AggregatedRecord[]> {
   try {
     const info = await head(BLOB_PATHNAME);
-    const res = await fetch(info.url, { cache: "no-store" });
+    // Los blobs públicos se sirven con cache-control de 30 días — head()
+    // siempre trae metadata fresca (incluido el etag), pero un fetch directo
+    // a info.url puede pegarle a una copia cacheada por el CDN aunque el
+    // contenido ya haya cambiado ({cache:"no-store"} solo controla la caché
+    // del cliente, no la del CDN). Colgar el etag como query param fuerza un
+    // cache-miss cada vez que el contenido realmente cambió, sin perder el
+    // beneficio de cachear cuando no cambió.
+    const res = await fetch(`${info.url}?v=${encodeURIComponent(info.etag)}`, { cache: "no-store" });
     if (!res.ok) return [];
     return (await res.json()) as AggregatedRecord[];
   } catch {
@@ -73,6 +80,7 @@ export async function writeAggregatedData(records: AggregatedRecord[]): Promise<
       addRandomSuffix: false,
       allowOverwrite: true,
       contentType: "application/json",
+      cacheControlMaxAge: 0,
     });
   } else {
     mkdirSync(path.dirname(DATA_FILE), { recursive: true });

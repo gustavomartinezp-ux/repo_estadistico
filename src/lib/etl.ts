@@ -168,6 +168,21 @@ export function parseInformeBuffer(buffer: Buffer, archivoFuente: string): Parse
     const motivoNoAtendido =
       estado === "No Atendido" ? ((row.MotivoNoAtendido as string | null) ?? "Sin motivo registrado") : null;
 
+    // La red APS de Talcahuano es un conjunto cerrado y conocido (10
+    // establecimientos, ver REDES) — a diferencia de los estamentos, acá no
+    // hay "uno nuevo legítimo" que agregar. Si tras normalizar no calza con
+    // ninguno, es la misma familia de corrupción por desplazamiento de
+    // columnas (ej. "Grupo B" filtrándose desde PrevisionEpisodio/Plan) que
+    // no pasó por el TipoProfesional inválido porque esa columna en
+    // particular seguía intacta. Se descarta en vez de crear un
+    // establecimiento fantasma.
+    if (!TODOS_LOS_ESTABLECIMIENTOS.includes(establecimiento)) {
+      corrupted++;
+      const label = `[establecimiento] ${establecimiento}`;
+      corruptedLabels.set(label, (corruptedLabels.get(label) ?? 0) + 1);
+      continue;
+    }
+
     if (!fechaISO || !prestacion || !profesional || typeof estado !== "string" || !tipoProfesional) {
       missingRequired++;
       continue;

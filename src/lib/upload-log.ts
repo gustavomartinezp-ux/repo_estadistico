@@ -11,8 +11,11 @@ const LOG_BLOB_PATHNAME = "upload-log.json";
 export async function readUploadLog(): Promise<EtlReport[]> {
   try {
     if (useBlob) {
+      // Ver el comentario en data-store.ts: el CDN puede servir una copia
+      // vieja del blob público pese a {cache:"no-store"} — el etag como
+      // query param fuerza un cache-miss cuando el contenido cambió.
       const info = await head(LOG_BLOB_PATHNAME);
-      const res = await fetch(info.url, { cache: "no-store" });
+      const res = await fetch(`${info.url}?v=${encodeURIComponent(info.etag)}`, { cache: "no-store" });
       if (!res.ok) return [];
       return (await res.json()) as EtlReport[];
     }
@@ -32,6 +35,7 @@ export async function appendUploadLog(report: EtlReport): Promise<void> {
       addRandomSuffix: false,
       allowOverwrite: true,
       contentType: "application/json",
+      cacheControlMaxAge: 0,
     });
   } else {
     mkdirSync(path.dirname(LOG_FILE), { recursive: true });
