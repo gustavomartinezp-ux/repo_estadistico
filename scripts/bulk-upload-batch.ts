@@ -1,19 +1,21 @@
 /**
  * Procesa VARIOS informes en una sola pasada en memoria y escribe a Vercel
- * Blob UNA SOLA VEZ al final. Existe porque bulk-upload-to-prod.ts (un
- * read-modify-write por archivo) resultó inseguro: Vercel Blob es de
- * consistencia eventual al sobrescribir un blob existente, y una escritura
- * ya confirmada puede de todos modos ser pisada más tarde por otra escritura
- * que leyó una copia vieja antes de que la primera terminara de propagar.
- * Al hacer un solo read -> N merges en memoria -> un solo write, el problema
- * desaparece por construcción (no hay lecturas intermedias que puedan
- * quedar obsoletas).
+ * Blob UNA SOLA VEZ al final. Existe porque un read-modify-write por archivo
+ * resultó inseguro: Vercel Blob es de consistencia eventual al sobrescribir
+ * un blob existente, y una escritura ya confirmada puede de todos modos ser
+ * pisada más tarde por otra escritura que leyó una copia vieja antes de que
+ * la primera terminara de propagar. Al hacer un solo read -> N merges en
+ * memoria -> un solo write, el problema desaparece por construcción (no hay
+ * lecturas intermedias que puedan quedar obsoletas).
+ *
+ * Usa los mismos helpers (blob-json.ts) que la app en producción, así que
+ * el formato (comprimido) y las garantías de propagación son idénticos.
  *
  * Uso:
  *   BLOB_READ_WRITE_TOKEN=<token> npx tsx scripts/bulk-upload-batch.ts <archivo1.xlsx> <archivo2.xlsx> ...
  */
 import { readFileSync } from "node:fs";
-import { head, put } from "@vercel/blob";
+import { readBlobJsonCompressed, writeBlobJsonCompressed } from "../src/lib/blob-json";
 import { parseInformeBuffer } from "../src/lib/etl";
 import type { AggregatedRecord, EtlReport } from "../src/lib/types";
 
@@ -27,40 +29,9 @@ if (!process.env.BLOB_READ_WRITE_TOKEN) {
   process.exit(1);
 }
 
-function sleep(ms: number) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-async function readBlobJson<T>(pathname: string): Promise<T | null> {
-  try {
-    const info = await head(pathname);
-    const res = await fetch(`${info.url}?v=${encodeURIComponent(info.etag)}`, { cache: "no-store" });
-    if (!res.ok) return null;
-    return (await res.json()) as T;
-  } catch {
-    return null;
-  }
-}
-
-async function putAndVerify(pathname: string, json: string, attempts = 12, delayMs = 1500): Promise<void> {
-  const result = await put(pathname, json, {
-    access: "public",
-    addRandomSuffix: false,
-    allowOverwrite: true,
-    contentType: "application/json",
-    cacheControlMaxAge: 0,
-  });
-  for (let i = 0; i < attempts; i++) {
-    const info = await head(pathname).catch(() => null);
-    if (info?.etag === result.etag) return;
-    await sleep(delayMs);
-  }
-  throw new Error(`${pathname}: head() no reflejó el nuevo etag tras ${attempts} intentos.`);
-}
-
 async function main() {
   console.log("Bajando el agregado actual de producción (única lectura de toda la corrida)...");
-  let accumulator: AggregatedRecord[] = (await readBlobJson<AggregatedRecord[]>("atenciones.json")) ?? [];
+  let accumulator: AggregatedRecord[] = (await readBlobJsonCompressed<AggregatedRecord[]>("atenciones.json")) ?? [];
   const newLogEntries: EtlReport[] = [];
 
   for (const filePath of filePaths) {
@@ -94,11 +65,11 @@ async function main() {
   accumulator.sort((a, b) => a.fecha.localeCompare(b.fecha));
 
   console.log("\nSubiendo el agregado final (una sola escritura, verificando propagación)...");
-  await putAndVerify("atenciones.json", JSON.stringify(accumulator));
+  await writeBlobJsonCompressed("atenciones.json", accumulator);
 
-  const existingLog = (await readBlobJson<EtlReport[]>("upload-log.json")) ?? [];
+  const existingLog = (await readBlobJsonCompressed<EtlReport[]>("upload-log.json")) ?? [];
   const finalLog = [...existingLog, ...newLogEntries];
-  await putAndVerify("upload-log.json", JSON.stringify(finalLog, null, 2));
+  await writeBlobJsonCompressed("upload-log.json", finalLog);
 
   const totales: Record<string, number> = {};
   for (const r of accumulator) totales[r.establecimiento] = (totales[r.establecimiento] ?? 0) + r.cantidad;

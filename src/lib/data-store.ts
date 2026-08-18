@@ -1,15 +1,17 @@
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
-import { head, put } from "@vercel/blob";
+import { writeAtencionesSummary } from "./atenciones-summary";
 import { useBlob } from "./blob-mode";
+import { readBlobJsonCompressed, writeBlobJsonCompressed } from "./blob-json";
+import { buildAtencionesResponse, EMPTY_FILTERS } from "./filter-utils";
 import type { AggregatedRecord, StatRecord } from "./types";
 
 /**
  * En Vercel el filesystem es efímero (se resetea entre despliegues y no se
  * comparte entre invocaciones de funciones serverless), así que el agregado
- * vive en Vercel Blob cuando hay un token configurado. En desarrollo local
- * (sin BLOB_READ_WRITE_TOKEN) sigue usando el disco, sin necesitar
- * credenciales de la nube para levantar el proyecto.
+ * vive en Vercel Blob (comprimido, ver blob-json.ts) cuando hay un token
+ * configurado. En desarrollo local (sin BLOB_READ_WRITE_TOKEN) sigue usando
+ * el disco, sin necesitar credenciales de la nube para levantar el proyecto.
  *
  * El nombre del blob es fijo ("atenciones.json", sin sufijo aleatorio) y se
  * sobrescribe en cada carga — es un solo documento, no versionado.
@@ -32,26 +34,6 @@ function toStatRecords(raw: AggregatedRecord[]): StatRecord[] {
   }));
 }
 
-async function readRawFromBlob(): Promise<AggregatedRecord[]> {
-  try {
-    const info = await head(BLOB_PATHNAME);
-    // Los blobs públicos se sirven con cache-control de 30 días — head()
-    // siempre trae metadata fresca (incluido el etag), pero un fetch directo
-    // a info.url puede pegarle a una copia cacheada por el CDN aunque el
-    // contenido ya haya cambiado ({cache:"no-store"} solo controla la caché
-    // del cliente, no la del CDN). Colgar el etag como query param fuerza un
-    // cache-miss cada vez que el contenido realmente cambió, sin perder el
-    // beneficio de cachear cuando no cambió.
-    const res = await fetch(`${info.url}?v=${encodeURIComponent(info.etag)}`, { cache: "no-store" });
-    if (!res.ok) return [];
-    return (await res.json()) as AggregatedRecord[];
-  } catch {
-    // El blob todavía no existe (primera carga) u otro error de red: se
-    // trata igual que "sin datos aún", igual que el catch del disco local.
-    return [];
-  }
-}
-
 function readRawFromDisk(): AggregatedRecord[] {
   try {
     return JSON.parse(readFileSync(DATA_FILE, "utf-8"));
@@ -62,29 +44,39 @@ function readRawFromDisk(): AggregatedRecord[] {
 
 export async function loadAggregatedData(): Promise<StatRecord[]> {
   if (cachedData) return cachedData;
-  const raw = useBlob ? await readRawFromBlob() : readRawFromDisk();
+  const raw = useBlob
+    ? ((await readBlobJsonCompressed<AggregatedRecord[]>(BLOB_PATHNAME)) ?? [])
+    : readRawFromDisk();
   cachedData = toStatRecords(raw);
   return cachedData;
 }
 
 /** Lee el archivo/blob crudo sin pasar por la caché (usado antes de fusionar una carga nueva). */
 export async function readAggregatedFileRaw(): Promise<AggregatedRecord[]> {
-  return useBlob ? readRawFromBlob() : readRawFromDisk();
+  if (useBlob) {
+    return (await readBlobJsonCompressed<AggregatedRecord[]>(BLOB_PATHNAME)) ?? [];
+  }
+  return readRawFromDisk();
 }
 
 export async function writeAggregatedData(records: AggregatedRecord[]): Promise<void> {
-  const json = JSON.stringify(records);
   if (useBlob) {
-    await put(BLOB_PATHNAME, json, {
-      access: "public",
-      addRandomSuffix: false,
-      allowOverwrite: true,
-      contentType: "application/json",
-      cacheControlMaxAge: 0,
-    });
+    await writeBlobJsonCompressed(BLOB_PATHNAME, records);
   } else {
+    const json = JSON.stringify(records);
     mkdirSync(path.dirname(DATA_FILE), { recursive: true });
     writeFileSync(DATA_FILE, json);
   }
-  cachedData = toStatRecords(records);
+  const stats = toStatRecords(records);
+  cachedData = stats;
+
+  // Precalcula la respuesta "sin filtros" (la carga inicial del Dashboard)
+  // acá mismo, para que nunca quede desincronizada del agregado real. Si
+  // falla, no debe tumbar la carga del informe — el Dashboard simplemente
+  // vuelve a calcular en vivo hasta la próxima carga exitosa.
+  try {
+    await writeAtencionesSummary(buildAtencionesResponse(stats, EMPTY_FILTERS));
+  } catch (err) {
+    console.error("[data-store] no se pudo precalcular el resumen de /api/atenciones:", err);
+  }
 }

@@ -1,6 +1,6 @@
 import { getEstablecimientosDeRed, REDES } from "./establecimientos";
 import { esProfesionalReal } from "./profesionales";
-import type { CategoryAggregate, DashboardFilters, StatRecord } from "./types";
+import type { AtencionesResponse, CategoryAggregate, DashboardFilters, StatRecord } from "./types";
 
 /** Parsea los query params de un request (?red=&establecimiento=&...) a DashboardFilters. */
 export function parseFiltersFromSearchParams(searchParams: URLSearchParams): DashboardFilters {
@@ -158,4 +158,49 @@ export function buildChart(
     return { groupBy: "profesional", data: aggregateBy(records, "profesional") };
   }
   return { groupBy: "prestacion", data: aggregateBy(records, "prestacion") };
+}
+
+/** true si no hay ningún filtro aplicado (el caso "Todos" — la carga inicial del Dashboard). */
+export function isEmptyFilters(filters: DashboardFilters): boolean {
+  return (
+    !filters.red &&
+    !filters.establecimiento &&
+    !filters.estamento &&
+    !filters.profesional &&
+    !filters.prestacion &&
+    !filters.estado &&
+    !filters.dateRange.from &&
+    !filters.dateRange.to
+  );
+}
+
+/**
+ * Arma la respuesta completa de /api/atenciones para un set de filtros dado.
+ * Se usa tanto para responder el request en vivo como para precalcular el
+ * caso "sin filtros" cada vez que se carga un informe nuevo (ver
+ * atenciones-summary.ts) — así la carga inicial del Dashboard no necesita
+ * releer ni filtrar el agregado completo en cada visita.
+ */
+export function buildAtencionesResponse(data: StatRecord[], filters: DashboardFilters): AtencionesResponse {
+  const filtered = filterRecords(data, filters);
+  const totalRegistros = filtered.reduce((sum, r) => sum + r.cantidad, 0);
+  const totalAtendidas = filtered
+    .filter((r) => r.estado === "Atendido")
+    .reduce((sum, r) => sum + r.cantidad, 0);
+
+  return {
+    kpis: {
+      totalRegistros,
+      totalAtendidas,
+      profesionalesActivos: new Set(filtered.map((r) => r.profesional).filter(esProfesionalReal)).size,
+      prestacionesDistintas: new Set(filtered.map((r) => r.prestacion)).size,
+    },
+    chart: buildChart(filtered, filters),
+    options: {
+      estamentos: getEstamentoOptions(data, filters),
+      profesionales: getProfesionalOptions(data, filters),
+      prestaciones: getPrestacionOptions(data, filters),
+      estados: getEstadoOptions(data, filters),
+    },
+  };
 }
