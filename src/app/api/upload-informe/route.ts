@@ -6,6 +6,12 @@ import { appendUploadLog } from "@/lib/upload-log";
 
 const MAX_SIZE_BYTES = 80 * 1024 * 1024; // 80MB
 
+// Los informes más grandes tienen 250mil+ filas; parsear/agregar eso más
+// bajar el blob temporal puede superar el límite por defecto de las
+// Serverless Functions (10s) mucho antes de terminar. 60s es el máximo
+// configurable en el plan Hobby de Vercel.
+export const maxDuration = 60;
+
 /**
  * Dos modos de entrada, según cómo llegó el archivo al servidor:
  *

@@ -4,6 +4,11 @@ import { getRedDeEstablecimiento, REDES } from "@/lib/establecimientos";
 import { esProfesionalReal } from "@/lib/profesionales";
 import type { EstablecimientoSummary } from "@/lib/types";
 
+// El agregado se lee de Vercel Blob (crece con cada carga; ya supera
+// 190MB) y se parsea en memoria - 60s es el máximo configurable en el
+// plan Hobby de Vercel, por si el default de 10s no alcanza.
+export const maxDuration = 60;
+
 export async function GET() {
   let summaries: EstablecimientoSummary[];
   try {
