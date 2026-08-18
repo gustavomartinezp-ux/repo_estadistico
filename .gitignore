@@ -48,3 +48,6 @@ ADMIN.txt
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+.vercel
+.env*

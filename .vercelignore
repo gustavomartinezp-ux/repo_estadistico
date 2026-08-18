@@ -1,0 +1,11 @@
+# Datos agregados de desarrollo local (en producción viven en Vercel Blob,
+# nunca en el bundle desplegado) - pesan ~190MB, superan el límite de deploy.
+data/*.json
+
+# Nunca debe subirse: informes fuente con datos de pacientes.
+raw-data/*
+!raw-data/.gitkeep
+
+node_modules
+.next
+.git
