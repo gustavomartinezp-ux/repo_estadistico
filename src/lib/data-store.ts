@@ -1,6 +1,7 @@
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { head, put } from "@vercel/blob";
+import { useBlob } from "./blob-mode";
 import type { AggregatedRecord, StatRecord } from "./types";
 
 /**
@@ -22,8 +23,6 @@ let cachedData: StatRecord[] | null = null;
 
 const DATA_FILE = path.join(process.cwd(), "data", "atenciones.json");
 const BLOB_PATHNAME = "atenciones.json";
-
-const useBlob = Boolean(process.env.BLOB_READ_WRITE_TOKEN);
 
 function toStatRecords(raw: AggregatedRecord[]): StatRecord[] {
   return raw.map((r) => ({

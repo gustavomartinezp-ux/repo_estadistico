@@ -21,5 +21,5 @@ export function middleware(request: NextRequest) {
 
 export const config = {
   runtime: "nodejs",
-  matcher: ["/cargar/:path*", "/api/upload-informe"],
+  matcher: ["/cargar/:path*", "/api/upload-informe", "/api/upload-informe/:path*"],
 };

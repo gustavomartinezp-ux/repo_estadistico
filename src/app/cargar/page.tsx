@@ -10,9 +10,10 @@ import {
   UploadCloud,
   X,
 } from "lucide-react";
+import { upload } from "@vercel/blob/client";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Footer } from "@/components/layout/Footer";
 import { Sidebar } from "@/components/layout/Sidebar";
 import { Topbar } from "@/components/layout/Topbar";
@@ -46,7 +47,22 @@ export default function CargarInformePage() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [result, setResult] = useState<UploadResult | null>(null);
   const [loggingOut, setLoggingOut] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState<number | null>(null);
+  // Vercel rechaza cualquier body de más de 4.5MB antes de que nuestra
+  // función corra, así que ahí hay que subir directo a Blob desde el
+  // navegador. En desarrollo local (sin ese límite) se sube clásico. Empieza
+  // en `false` (modo clásico) para no bloquear la UI mientras se confirma.
+  const [useBlobMode, setUseBlobMode] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    fetch("/api/upload-informe/mode")
+      .then((res) => res.json())
+      .then((data: { useBlob: boolean }) => setUseBlobMode(data.useBlob))
+      .catch(() => {
+        // silencioso: si falla, se sigue usando el modo clásico por defecto
+      });
+  }, []);
 
   async function handleLogout() {
     setLoggingOut(true);
@@ -75,11 +91,31 @@ export default function CargarInformePage() {
     if (!file) return;
     setStatus("uploading");
     setErrorMessage(null);
+    setUploadProgress(null);
 
     try {
-      const formData = new FormData();
-      formData.append("file", file);
-      const res = await fetch("/api/upload-informe", { method: "POST", body: formData });
+      let res: Response;
+      if (useBlobMode) {
+        // Sube directo del navegador a Vercel Blob (evita el límite de
+        // 4.5MB del body de las Serverless Functions) y luego le pasa a
+        // nuestra función solo la URL del archivo temporal para procesarlo.
+        const blob = await upload(file.name, file, {
+          access: "public",
+          handleUploadUrl: "/api/upload-informe/client-token",
+          onUploadProgress: ({ percentage }) => setUploadProgress(percentage),
+        });
+        setUploadProgress(null);
+        res = await fetch("/api/upload-informe", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ url: blob.url, filename: file.name }),
+        });
+      } else {
+        const formData = new FormData();
+        formData.append("file", file);
+        res = await fetch("/api/upload-informe", { method: "POST", body: formData });
+      }
+
       const body = await res.json().catch(() => null);
       if (!res.ok) {
         throw new Error(body?.error ?? `El servidor respondió ${res.status}.`);
@@ -89,6 +125,8 @@ export default function CargarInformePage() {
     } catch (err) {
       setErrorMessage(err instanceof Error ? err.message : "Error desconocido al subir el archivo.");
       setStatus("error");
+    } finally {
+      setUploadProgress(null);
     }
   }
 
@@ -192,7 +230,9 @@ export default function CargarInformePage() {
                 {status === "uploading" ? (
                   <>
                     <Loader2 className="h-4 w-4 animate-spin" />
-                    Procesando… puede tardar hasta un minuto en archivos grandes
+                    {uploadProgress !== null
+                      ? `Subiendo… ${Math.round(uploadProgress)}%`
+                      : "Procesando… puede tardar hasta un minuto en archivos grandes"}
                   </>
                 ) : (
                   "Subir y procesar"

@@ -1,12 +1,12 @@
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { head, put } from "@vercel/blob";
+import { useBlob } from "./blob-mode";
 import type { EtlReport } from "./types";
 
 /** Mismo patrón que data-store.ts: Vercel Blob en producción, disco en desarrollo local. */
 const LOG_FILE = path.join(process.cwd(), "data", "upload-log.json");
 const LOG_BLOB_PATHNAME = "upload-log.json";
-const useBlob = Boolean(process.env.BLOB_READ_WRITE_TOKEN);
 
 export async function readUploadLog(): Promise<EtlReport[]> {
   try {
